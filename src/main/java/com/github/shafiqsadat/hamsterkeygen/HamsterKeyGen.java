@@ -4,8 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -22,7 +23,6 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class HamsterKeyGen {
     private static final Logger logger = LogManager.getLogger(HamsterKeyGen.class);
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Map<Integer, Game> games = new LinkedHashMap<>();
@@ -90,6 +90,15 @@ public class HamsterKeyGen {
         }
     }
 
+    private static HttpClient createHttpClientWithProxy(String proxy) {
+        String[] proxyParts = proxy.split(":");
+        InetSocketAddress proxyAddress = new InetSocketAddress(proxyParts[0], Integer.parseInt(proxyParts[1]));
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .proxy(ProxySelector.of(proxyAddress))
+                .build();
+    }
+
     private static String generateKeyProcess(Game game, List<String> proxies) {
         try {
             String clientId = generateClientId();
@@ -129,13 +138,15 @@ public class HamsterKeyGen {
 
     private static String login(String clientId, String appToken, List<String> proxies) throws IOException, InterruptedException {
         String proxy = proxies.isEmpty() ? null : proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
+        HttpClient client = proxy != null ? createHttpClientWithProxy(proxy) : HttpClient.newHttpClient();
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://api.gamepromo.io/promo/login-client"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString("{\"appToken\":\"" + appToken + "\",\"clientId\":\"" + clientId + "\",\"clientOrigin\":\"deviceid\"}"))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 200) {
             var data = objectMapper.readValue(response.body(), Map.class);
             logger.info("Login successful for client ID: {}", clientId);
@@ -148,6 +159,8 @@ public class HamsterKeyGen {
 
     private static boolean emulateProgress(String clientToken, String promoId, List<String> proxies, int attempts, int timeOut, int currentAttempt) throws IOException, InterruptedException {
         String proxy = proxies.isEmpty() ? null : proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
+        HttpClient client = proxy != null ? createHttpClientWithProxy(proxy) : HttpClient.newHttpClient();
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://api.gamepromo.io/promo/register-event"))
                 .header("Authorization", "Bearer " + clientToken)
@@ -155,14 +168,13 @@ public class HamsterKeyGen {
                 .POST(HttpRequest.BodyPublishers.ofString("{\"promoId\":\"" + promoId + "\",\"eventId\":\"" + UUID.randomUUID() + "\",\"eventOrigin\":\"undefined\"}"))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         var data = objectMapper.readValue(response.body(), Map.class);
         if (response.statusCode() == 200) {
-            System.out.println(data);
             return (Boolean) data.get("hasCode");
         } else if (response.body().contains("TooManyRegister")) {
             logger.error("Failed to emulate progress (attempt {}/{}}): {}", currentAttempt, attempts, response.body());
-            Thread.sleep(timeOut); // Wait 30 seconds before retrying
+            Thread.sleep(timeOut); // Wait before retrying
         } else {
             logger.error("Failed to emulate progress: {}", response.body());
             return false;
@@ -173,6 +185,8 @@ public class HamsterKeyGen {
 
     private static String generateKey(String clientToken, String promoId, List<String> proxies) throws IOException, InterruptedException {
         String proxy = proxies.isEmpty() ? null : proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
+        HttpClient client = proxy != null ? createHttpClientWithProxy(proxy) : HttpClient.newHttpClient();
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://api.gamepromo.io/promo/create-code"))
                 .header("Authorization", "Bearer " + clientToken)
@@ -180,7 +194,7 @@ public class HamsterKeyGen {
                 .POST(HttpRequest.BodyPublishers.ofString("{\"promoId\":\"" + promoId + "\"}"))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 200) {
             var data = objectMapper.readValue(response.body(), Map.class);
             String key = (String) data.get("promoCode");
@@ -208,4 +222,3 @@ public class HamsterKeyGen {
         }
     }
 }
-
