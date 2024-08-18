@@ -1,0 +1,80 @@
+name: "Build & Release"
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+      - name: Build with Maven
+        run: |
+          mvn clean install
+          mvn package -DskipTests=true assembly:single
+      - name: Rename JAR
+        run: |
+          Rename-Item -Path target/HamsterKeyGenJava-1.0-SNAPSHOT-jar-with-dependencies.jar -NewName HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+        shell: pwsh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows-build
+          path: target/HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+      - name: Build with Maven
+        run: |
+          mvn clean install
+          mvn package -DskipTests=true assembly:single
+      - name: Rename JAR
+        run: |
+          mv target/HamsterKeyGenJava-1.0-SNAPSHOT-jar-with-dependencies.jar target/HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos-build
+          path: target/HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download Windows build
+        uses: actions/download-artifact@v2
+        with:
+          name: windows-build
+          path: ./build
+      - name: Download macOS build
+        uses: actions/download-artifact@v2
+        with:
+          name: macos-build
+          path: ./build
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: ./build/*
+          tag: v1.0.${{ github.run_number }}
+          token: ${{ secrets.GH_TOKEN }}
