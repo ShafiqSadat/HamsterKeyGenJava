@@ -27,7 +27,8 @@ jobs:
           mvn package -DskipTests=true assembly:single
       - name: Rename JAR
         run: |
-          Rename-Item -Path target/HamsterKeyGenJava-1.0-SNAPSHOT-jar-with-dependencies.jar -NewName HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+          $jarFile = Get-ChildItem -Path target -Filter "*-jar-with-dependencies.jar"
+          Rename-Item -Path $jarFile.FullName -NewName "HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar"
         shell: pwsh
       - name: Upload artifact
         uses: actions/upload-artifact@v2
@@ -50,7 +51,8 @@ jobs:
           mvn package -DskipTests=true assembly:single
       - name: Rename JAR
         run: |
-          mv target/HamsterKeyGenJava-1.0-SNAPSHOT-jar-with-dependencies.jar target/HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar
+          jarFile=$(find target -name "*-jar-with-dependencies.jar")
+          mv $jarFile "target/HamsterKeyGenJava-v1.0.${{ github.run_number }}.jar"
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
